@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Recipe Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .ingredient-input {
+            margin: 15px 0;
+        }
+        .ingredient-input input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        .ingredient-input input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 14px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        .recipe-card {
+            margin-top: 20px;
+            padding: 25px;
+            border-left: 4px solid #4CAF50;
+            border-radius: 5px;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .recipe-card h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        .match-percentage {
+            color: #4CAF50;
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        .error {
+            color: #d32f2f;
+            margin-top: 15px;
+            padding: 12px;
+            background-color: #ffebee;
+            border-radius: 4px;
+            border-left: 4px solid #d32f2f;
+        }
+        .loading {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 18px;
+            color: #666;
+        }
+        .ingredients-list {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        .ingredients-list li {
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+            border-left: 3px solid #4CAF50;
+        }
+        .instructions {
+            line-height: 1.8;
+            color: #444;
+            white-space: pre-line;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .server-status {
+            padding: 10px;
+            margin: 20px 0;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .server-connected {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .server-disconnected {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Recipe Generator</h1>
+        
+        <div id="server-status" class="server-status server-disconnected">
+            Checking server connection...
+        </div>
+
+        <div class="ingredient-input">
+            <input type="text" id="ingredient1" placeholder="Enter first ingredient (e.g., chicken)">
+        </div>
+        <div class="ingredient-input">
+            <input type="text" id="ingredient2" placeholder="Enter second ingredient (e.g., tomatoes)">
+        </div>
+        <div class="ingredient-input">
+            <input type="text" id="ingredient3" placeholder="Enter third ingredient (e.g., onion)">
+        </div>
+        
+        <button onclick="generateRecipe()">Generate Recipes</button>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="loading" class="loading" style="display: none;">
+            <div>Searching for delicious recipes...</div>
+        </div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // Check server connection on page load
+        window.onload = function() {
+            checkServerConnection();
+        };
+
+        function checkServerConnection() {
+            const statusDiv = document.getElementById('server-status');
+            
+            fetch('http://localhost:5000/test')
+            .then(response => response.json())
+            .then(data => {
+                statusDiv.className = 'server-status server-connected';
+                statusDiv.textContent = 'Server Connected';
+            })
+            .catch(error => {
+                statusDiv.className = 'server-status server-disconnected';
+                statusDiv.textContent = 'Server Not Connected - Make sure Flask is running on port 5000';
+            });
+        }
+
+        function generateRecipe() {
+            const ingredients = [
+                document.getElementById('ingredient1').value,
+                document.getElementById('ingredient2').value,
+                document.getElementById('ingredient3').value
+            ].filter(ingredient => ingredient.trim() !== '');
+
+            if (ingredients.length < 3) {
+                showError('Please enter all three ingredients');
+                return;
+            }
+
+            hideError();
+            showLoading();
+            clearResults();
+
+            fetch('http://localhost:5000/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ ingredients: ingredients }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                displayRecipes(data.recipes);
+            })
+            .catch(error => {
+                hideLoading();
+                showError('Error: ' + error.message);
+            });
+        }
+
+        function displayRecipes(recipes) {
+            const resultsDiv = document.getElementById('results');
+            
+            if (!recipes || recipes.length === 0) {
+                resultsDiv.innerHTML = '<p style="text-align: center; color: #666;">No matching recipes found. Try different ingredients!</p>';
+                return;
+            }
+            
+            recipes.forEach((recipe, index) => {
+                const recipeCard = document.createElement('div');
+                recipeCard.className = 'recipe-card';
+                recipeCard.style.animationDelay = `${index * 0.1}s`;
+                
+                recipeCard.innerHTML = `
+                    <h2>${recipe.recipe_name}</h2>
+                    <p class="match-percentage">Match: ${recipe.match_percentage}%</p>
+                    <h3>Ingredients:</h3>
+                    <ul class="ingredients-list">
+                        ${recipe.ingredients.map(ingredient => `<li>${ingredient}</li>`).join('')}
+                    </ul>
+                    <h3>Instructions:</h3>
+                    <div class="instructions">${recipe.instructions}</div>
+                `;
+                
+                resultsDiv.appendChild(recipeCard);
+            });
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.style.display = 'block';
+            errorDiv.textContent = message;
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
